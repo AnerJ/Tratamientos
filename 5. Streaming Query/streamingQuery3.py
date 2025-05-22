@@ -1,18 +1,15 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, window, count
+from pyspark.sql.functions import from_json, col, window, approx_count_distinct
 from pyspark.sql.types import StructType, StringType, TimestampType
-
-# Crear la sesión de Spark
-spark = SparkSession.builder.appName("StreamingQuery4 - Breaking News Spike Detection").getOrCreate()
-
-# Leer desde Kafka
+#Spark session
+spark = SparkSession.builder.appName("StreamingQuery3 - Active Sessions by Country").getOrCreate()
+#Read from kafka
 df = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", "172.31.7.172:9094") \
     .option("subscribe", "news_events") \
     .load()
-
-# Esquema del JSON
+#updated schema
 schema = StructType() \
     .add("user_id", StringType()) \
     .add("article_id", StringType()) \
@@ -21,19 +18,15 @@ schema = StructType() \
     .add("location", StringType()) \
     .add("device_type", StringType()) \
     .add("session_id", StringType())
-
-# Parsear el JSON
+#Parse and select the wanted values
 events = df.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*")
-
-# Agrupar por artículo y ventana de 10 minutos, contar vistas y filtrar picos (>250)
+#FILTER the result 
 result = events \
-    .withWatermark("timestamp", "10 minutes") \
-    .groupBy(window(col("timestamp"), "10 minutes"), col("article_id")) \
-    .agg(count("*").alias("view_count")) \
-    .filter(col("view_count") > 1) \
-    .orderBy(col("view_count").desc())
-
-# Mostrar los resultados por consola
+    .withWatermark("timestamp", "5 minutes") \
+    .groupBy(window(col("timestamp"), "5 minutes"), col("location")) \
+    .agg(approx_count_distinct("session_id").alias("active_sessions")) \
+    .orderBy(col("active_sessions").desc())
+#Show i 
 query = result.writeStream \
     .outputMode("complete") \
     .format("console") \

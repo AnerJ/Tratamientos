@@ -1,18 +1,18 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
+from pyspark.sql.functions import from_json, col, window, count
 from pyspark.sql.types import StructType, StringType, TimestampType
 
-# Crear la sesión de Spark
-spark = SparkSession.builder.appName("Query2 - Device Usage Trends").getOrCreate()
+# Create spark session
+spark = SparkSession.builder.appName("StreamingQuery5 - Suspicious Behavior Detection").getOrCreate()
 
-# Leer desde Kafka
+#read from kafka
 df = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", "172.31.7.172:9094") \
     .option("subscribe", "news_events") \
     .load()
 
-# Esquema actualizado
+# Define JSON schema
 schema = StructType() \
     .add("user_id", StringType()) \
     .add("article_id", StringType()) \
@@ -22,24 +22,22 @@ schema = StructType() \
     .add("device_type", StringType()) \
     .add("session_id", StringType())
 
-# Parsear JSON y seleccionar campos
+# Parse the events
 events = df.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*")
 
-# Filtrar solo los dispositivos válidos
-valid_devices = ["mobile", "desktop", "tablet"]
-filtered = events.filter(col("device_type").isin(valid_devices))
+# Detect the suspicious behavior: > 20 clikcs per minute per user
+suspicious_users = events \
+    .withWatermark("timestamp", "1 minute") \
+    .groupBy(window(col("timestamp"), "1 minute"), col("user_id")) \
+    .agg(count("article_id").alias("click_count")) \
+    .filter(col("click_count") > 20) \
+    .orderBy(col("click_count").desc())
 
-# Agrupar por tipo de dispositivo
-device_counts = filtered.groupBy("device_type").count().orderBy(col("count").desc())
-
-# Mostrar resultados en consola
-query = device_counts.writeStream \
+#Show 
+query = suspicious_users.writeStream \
     .outputMode("complete") \
     .format("console") \
     .option("truncate", False) \
     .start()
 
 query.awaitTermination()
-
-
-#FUNCIONA JODER

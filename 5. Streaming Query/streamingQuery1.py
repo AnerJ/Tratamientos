@@ -2,17 +2,17 @@ from pyspark.sql.functions import from_json, col, window
 from pyspark.sql.types import StructType, StringType, TimestampType
 from pyspark.sql import SparkSession
 
-# Crear la sesión de Spark
+# Spark sesion
 spark = SparkSession.builder.appName("Query1 - Top Finance Countries").getOrCreate()
 
-# Leer datos desde Kafka
+# Read data from kafka
 df = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", "172.31.7.172:9094") \
     .option("subscribe", "news_events") \
     .load()
 
-# Esquema actualizado
+# Schema updated
 schema = StructType() \
     .add("user_id", StringType()) \
     .add("article_id", StringType()) \
@@ -22,13 +22,13 @@ schema = StructType() \
     .add("device_type", StringType()) \
     .add("session_id", StringType())
 
-# Parsear JSON y seleccionar campos
+# Parse JSOn fields and choose the values that we want
 events = df.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*")
 
-# Filtrar solo los eventos de categoría "finance"
+# Filter only events of the catgory "finance" 
 finance = events.filter(col("category") == "finance")
 
-# Agrupar por país y ventana de tiempo
+# GRouo by country and filter
 result = finance \
     .withWatermark("timestamp", "15 minutes") \
     .groupBy(window(col("timestamp"), "15 minutes"), col("location")) \
@@ -36,7 +36,7 @@ result = finance \
     .orderBy(col("count").desc()) \
     .limit(10)
 
-# Mostrar resultados en consola
+# Show result
 query = result.writeStream \
     .outputMode("complete") \
     .format("console") \
